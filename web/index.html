@@ -22,7 +22,7 @@
     import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
     const SUPABASE_URL = "https://xwzzmiomjtnaladqhikc.supabase.co";   // ✅ 已填
-    const SUPABASE_ANON_KEY = "<把anon_public_key粘这里>";              // ← 只剩这个要你粘
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh3enptaW9tanRuYWxhZHFoaWtjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1ODQ4MjEsImV4cCI6MjA5NzE2MDgyMX0.ggZ6G2XZpaEVTxpf6uqCNmS-gD8cxy_37UfLFQrof1Y";              // ← 只剩这个要你粘
     const FUNCTION_URL = `${SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co")}/notes-api`;
 
     const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);

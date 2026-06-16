@@ -71,6 +71,7 @@ async function handleUserinfo(req: Request): Promise<Response> {
     headers: { "x-acs-dingtalk-access-token": token },
   });
   const u = await resp.json();
+  console.log("[userinfo] dingtalk status=" + resp.status + " body=" + JSON.stringify(u));
   if (!resp.ok || !u.unionId) {
     return json({ error: "server_error", error_description: JSON.stringify(u) }, 400);
   }

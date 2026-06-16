@@ -1,0 +1,43 @@
+name: Deploy to Supabase
+
+# 本地 push 到 main → GitHub Actions 自动把 migration + Edge Functions 部署到 Supabase
+# 这就是"本地→GitHub→Supabase 自动部署"三位一体里 GitHub 那条腿。
+#
+# 启用前提（在 GitHub 仓库 Settings → Secrets 配 2 个）：
+#   SUPABASE_ACCESS_TOKEN   — Supabase 个人访问令牌 sbp_...
+#   SUPABASE_DB_PASSWORD    — 数据库密码
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PROJECT_REF: xwzzmiomjtnaladqhikc
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link project
+        run: supabase link --project-ref "$PROJECT_REF" --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Push DB migrations
+        run: supabase db push --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy Edge Functions
+        run: |
+          supabase functions deploy dingtalk-oauth --no-verify-jwt --project-ref "$PROJECT_REF"
+          supabase functions deploy notes-api --project-ref "$PROJECT_REF"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
