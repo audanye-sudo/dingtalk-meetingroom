@@ -16,6 +16,12 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# macOS 坑：supabase functions deploy 用 Docker 打包，/tmp、/private/tmp 默认不被 Docker Desktop 挂载，
+# 会报 "entrypoint path does not exist / error running container"。务必在 Docker 可见路径（如 ~/ 下）运行。
+case "$(pwd)" in
+  /tmp/*|/private/tmp/*) echo "⚠️ 当前在 /tmp 下，Docker 可能挂载不到导致部署函数失败，请挪到 ~/ 下再跑"; exit 1;;
+esac
+
 APP_NAME="${1:-dingtalk-app}"
 REGION="${SUPABASE_REGION:-ap-southeast-1}"
 : "${SUPABASE_ACCESS_TOKEN:?需要 export SUPABASE_ACCESS_TOKEN=sbp_xxx}"
