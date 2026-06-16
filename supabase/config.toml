@@ -1,0 +1,9 @@
+project_id = "xwzzmiomjtnaladqhikc"
+
+[functions.dingtalk-oauth]
+# 身份适配层：Supabase 鉴权服务器调它换 token / 取用户信息，不带用户 JWT，故关闭校验
+verify_jwt = false
+
+[functions.notes-api]
+# 业务接口：前端带登录用户 JWT 调用，平台先校验
+verify_jwt = true

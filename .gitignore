@@ -1,0 +1,14 @@
+# 机密：绝不提交
+.env
+.env.local
+.env.*.local
+*.secret
+
+# Supabase 本地
+supabase/.branches
+supabase/.temp
+.supabase
+
+# 依赖/系统
+node_modules/
+.DS_Store

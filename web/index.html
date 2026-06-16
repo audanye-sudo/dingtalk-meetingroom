@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>钉钉登录 + Supabase 最小闭环 Demo</title>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #222; }
+    button { padding: 8px 16px; border-radius: 6px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
+    button.primary { background: #1677ff; color: #fff; border-color: #1677ff; }
+    input { padding: 8px; border: 1px solid #ccc; border-radius: 6px; width: 70%; }
+    .card { border: 1px solid #eee; border-radius: 8px; padding: 16px; margin: 12px 0; }
+    .note { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; }
+    pre { background: #f6f8fa; padding: 12px; border-radius: 6px; overflow:auto; }
+  </style>
+</head>
+<body>
+  <h2>钉钉登录 + Supabase 最小闭环</h2>
+
+  <!-- ① 改成你的 Supabase 项目配置 -->
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+    const SUPABASE_URL = "https://xwzzmiomjtnaladqhikc.supabase.co";   // ✅ 已填
+    const SUPABASE_ANON_KEY = "<把anon_public_key粘这里>";              // ← 只剩这个要你粘
+    const FUNCTION_URL = `${SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co")}/notes-api`;
+
+    const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const $ = (id) => document.getElementById(id);
+
+    async function render() {
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) {
+        $("app").innerHTML = `<button class="primary" id="login">用钉钉登录</button>`;
+        $("login").onclick = () =>
+          sb.auth.signInWithOAuth({ provider: "custom:dingtalk", options: { redirectTo: location.href } });
+        return;
+      }
+      const u = session.user;
+      $("app").innerHTML = `
+        <div class="card">
+          <b>${u.user_metadata?.name ?? "已登录"}</b>（sub/unionId: <code>${u.user_metadata?.sub ?? u.id}</code>）
+          <button id="logout" style="float:right">退出</button>
+        </div>
+        <div class="card">
+          <input id="content" placeholder="写一条 note…" />
+          <button class="primary" id="add">新增</button>
+          <div id="list"></div>
+        </div>
+        <details><summary>Edge Function 原始返回</summary><pre id="raw"></pre></details>`;
+      $("logout").onclick = async () => { await sb.auth.signOut(); render(); };
+      $("add").onclick = async () => {
+        const content = $("content").value.trim();
+        if (!content) return;
+        await callFn("POST", { content });
+        $("content").value = "";
+        load();
+      };
+      load();
+    }
+
+    // 调业务 Edge Function（带登录 JWT）
+    async function callFn(method, body) {
+      const { data: { session } } = await sb.auth.getSession();
+      const res = await fetch(FUNCTION_URL, {
+        method,
+        headers: { "Authorization": `Bearer ${session.access_token}`, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      return res.json();
+    }
+
+    async function load() {
+      const r = await callFn("GET");
+      $("raw").textContent = JSON.stringify(r, null, 2);
+      $("list").innerHTML = `<p>共 ${r.count ?? 0} 条：</p>` +
+        (r.notes ?? []).map((n) => `<div class="note">${n.content}<small style="color:#999"> · ${n.created_at}</small></div>`).join("");
+    }
+
+    render();
+  </script>
+
+  <div id="app">加载中…</div>
+
+  <p style="color:#999;font-size:13px;margin-top:32px">
+    前置：① Supabase 已建 Custom OAuth2 Provider <code>custom:dingtalk</code>（URL 见附录 C.1）；
+    ② notes 表 + RLS 已建（migration）；③ notes-api 已部署。
+  </p>
+</body>
+</html>
