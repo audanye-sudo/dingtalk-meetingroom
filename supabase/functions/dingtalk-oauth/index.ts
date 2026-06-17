@@ -1,94 +1,109 @@
 // supabase/functions/dingtalk-oauth/index.ts
 // ──────────────────────────────────────────────────────────────────────────
-// 钉钉 OAuth2.0 → 标准 OAuth2 适配层（Supabase Edge Function / Deno）
+// 钉钉「扫码登录应用」(移动接入应用-登录) → 标准 OAuth2 适配层
+//   面向【任意钉钉用户 / 跨组织】登录，不受 900104 跨组织限制、无需 Contact.User.Read。
 //
-// 为什么需要它：钉钉 OAuth2.0 不是标准实现（见方案文档附录 B）：
-//   · token 端点要 JSON body，返回字段是 accessToken / expireIn
-//   · userinfo 用自定义 header x-acs-dingtalk-access-token（非 Authorization: Bearer）
-// 所以 Supabase 的 Custom OAuth2 Provider 不能直连钉钉，这层把它包成标准 OAuth2。
+// 与旧版（企业内部自建应用 oauth2/userAccessToken）不同：
+//   · 授权走 oapi.dingtalk.com/connect/qrconnect（scope=snsapi_login）
+//   · 换用户信息走 sns/getuserinfo_bycode（HMAC-SHA256 签名），一步拿 unionId
 //
-// Supabase Custom OAuth2 Provider 三个 URL 这样填：
-//   Authorization URL: https://login.dingtalk.com/oauth2/auth      （直接指钉钉，无需适配）
-//   Token URL:         https://<project-ref>.functions.supabase.co/dingtalk-oauth/token
-//   User Info URL:     https://<project-ref>.functions.supabase.co/dingtalk-oauth/userinfo
+// Supabase Custom OAuth2 Provider（Manual）三个 URL：
+//   Authorization URL: https://<ref>.functions.supabase.co/dingtalk-oauth/authorize
+//   Token URL:         https://<ref>.functions.supabase.co/dingtalk-oauth/token
+//   User Info URL:     https://<ref>.functions.supabase.co/dingtalk-oauth/userinfo
 //
-// 部署：
-//   supabase functions deploy dingtalk-oauth --no-verify-jwt
-//   supabase secrets set DINGTALK_CLIENT_ID=xxx DINGTALK_CLIENT_SECRET=xxx
+// 部署：supabase functions deploy dingtalk-oauth --no-verify-jwt --project-ref <ref>
+// 机密：DINGTALK_CLIENT_ID = 扫码登录应用 appId；DINGTALK_CLIENT_SECRET = appSecret
 // ──────────────────────────────────────────────────────────────────────────
 
-const DING_TOKEN_URL = "https://api.dingtalk.com/v1.0/oauth2/userAccessToken";
-const DING_USERINFO_URL = "https://api.dingtalk.com/v1.0/contact/users/me";
+const DING_AUTHORIZE = "https://oapi.dingtalk.com/connect/qrconnect";
+const DING_USERINFO_BYCODE = "https://oapi.dingtalk.com/sns/getuserinfo_bycode";
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   const path = url.pathname.replace(/^\/dingtalk-oauth/, "");
   try {
+    if (path === "/authorize") return handleAuthorize(url);
     if (path === "/token") return await handleToken(req);
-    if (path === "/userinfo") return await handleUserinfo(req);
-    if (path === "/version") return json({ version: "ci-roundtrip-1", deployedBy: "github-actions" });
+    if (path === "/userinfo") return handleUserinfo(req);
+    if (path === "/version") return json({ version: "qrlogin-1", flow: "snsapi_login" });
     return json({ error: "not_found" }, 404);
   } catch (e) {
     return json({ error: "server_error", message: String(e) }, 500);
   }
 });
 
-// 标准 OAuth2 token 请求(form-encoded) → 钉钉 JSON → 标准 token 响应
+// Supabase 标准授权请求 → 转成钉钉扫码登录 qrconnect（client_id→appid, scope→snsapi_login）
+function handleAuthorize(url: URL): Response {
+  const clientId = url.searchParams.get("client_id") ?? Deno.env.get("DINGTALK_CLIENT_ID") ?? "";
+  const redirectUri = url.searchParams.get("redirect_uri") ?? "";
+  const state = url.searchParams.get("state") ?? "";
+  const target = `${DING_AUTHORIZE}?appid=${encodeURIComponent(clientId)}`
+    + `&response_type=code&scope=snsapi_login`
+    + `&state=${encodeURIComponent(state)}`
+    + `&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  return new Response(null, { status: 302, headers: { Location: target, ...CORS } });
+}
+
+// 标准 token 请求 → 钉钉 getuserinfo_bycode（一步拿到 unionId）→ 把用户信息打包进 access_token
 async function handleToken(req: Request): Promise<Response> {
   const form = await req.formData();
   const code = String(form.get("code") ?? "");
-  if (!code) {
-    return json({ error: "invalid_request", error_description: "missing code" }, 400);
-  }
-  const resp = await fetch(DING_TOKEN_URL, {
+  if (!code) return json({ error: "invalid_request", error_description: "missing code" }, 400);
+
+  const appId = Deno.env.get("DINGTALK_CLIENT_ID")!;
+  const appSecret = Deno.env.get("DINGTALK_CLIENT_SECRET")!;
+  const ts = Date.now().toString();
+  const sig = await signHmac(ts, appSecret);
+  const api = `${DING_USERINFO_BYCODE}?accessKey=${encodeURIComponent(appId)}&timestamp=${ts}&signature=${sig}`;
+
+  const resp = await fetch(api, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      clientId: Deno.env.get("DINGTALK_CLIENT_ID"),
-      clientSecret: Deno.env.get("DINGTALK_CLIENT_SECRET"),
-      code,
-      grantType: "authorization_code",
-    }),
+    body: JSON.stringify({ tmp_auth_code: code }),
   });
   const d = await resp.json();
-  if (!resp.ok || !d.accessToken) {
+  console.log("[token] getuserinfo_bycode status=" + resp.status + " body=" + JSON.stringify(d));
+  const u = d.user_info;
+  if (!u || !u.unionid) {
     return json({ error: "invalid_grant", error_description: JSON.stringify(d) }, 400);
   }
-  return json({
-    access_token: d.accessToken,
-    token_type: "bearer",
-    expires_in: d.expireIn ?? 7200,
-    refresh_token: d.refreshToken,
-  });
+  // 把 {unionid, openid, nick} 打包进 token（UTF-8 安全 base64），userinfo 端再解出来
+  const packed = b64encode(JSON.stringify({ unionid: u.unionid, openid: u.openid, nick: u.nick }));
+  return json({ access_token: packed, token_type: "bearer", expires_in: 7200 });
 }
 
-// 标准 Bearer → 钉钉自定义 header → 标准 OIDC claims（sub 用稳定的 unionId）
-async function handleUserinfo(req: Request): Promise<Response> {
-  const auth = req.headers.get("authorization") ?? "";
-  const token = auth.replace(/^Bearer\s+/i, "");
+// 标准 Bearer（内含打包的用户信息）→ 解出标准 claims（sub=unionId）
+function handleUserinfo(req: Request): Response {
+  const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
   if (!token) return json({ error: "invalid_token" }, 401);
-
-  const resp = await fetch(DING_USERINFO_URL, {
-    headers: { "x-acs-dingtalk-access-token": token },
-  });
-  const u = await resp.json();
-  console.log("[userinfo] dingtalk status=" + resp.status + " body=" + JSON.stringify(u));
-  if (!resp.ok || !u.unionId) {
-    return json({ error: "server_error", error_description: JSON.stringify(u) }, 400);
-  }
-  return json({
-    sub: u.unionId,        // 稳定唯一标识，做用户主键
-    name: u.nick,
-    picture: u.avatarUrl,
-    email: u.email,        // 钉钉可能不返回，取决于用户资料 + 应用权限
-    phone_number: u.mobile,
-    openid: u.openId,
-  });
+  let u: { unionid: string; openid?: string; nick?: string };
+  try { u = JSON.parse(b64decode(token)); } catch { return json({ error: "invalid_token" }, 401); }
+  if (!u.unionid) return json({ error: "invalid_token" }, 401);
+  return json({ sub: u.unionid, name: u.nick, openid: u.openid });
 }
 
+// HMAC-SHA256(timestamp, appSecret) → base64 → urlencode
+async function signHmac(timestamp: string, secret: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(timestamp));
+  const b64 = btoa(String.fromCharCode(...new Uint8Array(mac)));
+  return encodeURIComponent(b64);
+}
+
+// UTF-8 安全 base64（昵称可能含中文）
+function b64encode(s: string): string { return btoa(unescape(encodeURIComponent(s))); }
+function b64decode(s: string): string { return decodeURIComponent(escape(atob(s))); }
+
+const CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "authorization, content-type",
+};
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json" },
+    status, headers: { ...CORS, "content-type": "application/json" },
   });
 }
