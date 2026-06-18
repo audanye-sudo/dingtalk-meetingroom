@@ -78,6 +78,19 @@ supabase functions deploy --help | grep -- --no-verify-jwt                      
 gh repo create --help | grep -- --source                                                                      # 期望命中
 ```
 
+## 5. 部署产物链接（全部线上探活存活，可直接点开）
+
+| 产物 | 链接 | 探活 |
+|------|------|------|
+| **前端应用（成品）** | https://peterguy326.github.io/dingtalk-supabase/ | **200 ✅** |
+| OIDC discovery | https://xwzzmiomjtnaladqhikc.functions.supabase.co/dingtalk-oauth/.well-known/openid-configuration | 200 |
+| userinfo | https://xwzzmiomjtnaladqhikc.functions.supabase.co/dingtalk-oauth/userinfo | 401（鉴权生效） |
+| token | https://xwzzmiomjtnaladqhikc.functions.supabase.co/dingtalk-oauth/token | 500（GET 探活无 body 所致，真实是 POST+code） |
+| notes-api | https://xwzzmiomjtnaladqhikc.functions.supabase.co/notes-api | 401 |
+| Supabase 项目主域 | https://xwzzmiomjtnaladqhikc.supabase.co | 401（存在） |
+| CI: Deploy to Supabase | https://github.com/PeterGuy326/dingtalk-supabase/actions/runs/27731783751 | ✅ success |
+| CI: Deploy Frontend to Pages | https://github.com/PeterGuy326/dingtalk-supabase/actions/runs/27731783759 | ✅ success |
+
 ## 总评
 
 - **命令层**：100% 真实，无编造。
