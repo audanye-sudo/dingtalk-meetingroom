@@ -24,6 +24,32 @@ metadata:
 GitHub Pages ◄──同一次 push── web/ 静态前端
 ```
 
+## 🤖 Agent 执行入口（无脑照做，按顺序）
+
+> 给 agent：这是固定四段流程，不用读完整篇文档也能闭环。第 1、2 步备好后，第 3 步一条命令搞定全自动部署。
+
+```
+① 拉模板（务必在 ~/ 下，不要在 /tmp，否则函数部署会被 Docker 挂载坑卡死）
+   git clone https://github.com/PeterGuy326/dingtalk-supabase.git ~/my-app
+   cd ~/my-app
+
+② 收齐 3 个入参（向用户索取，缺一不可）→ export 到环境变量
+   export SUPABASE_ACCESS_TOKEN=sbp_xxx     # https://supabase.com/dashboard/account/tokens
+   export DINGTALK_CLIENT_ID=dingxxx        # 钉钉应用 AppKey（不接钉钉身份可传占位）
+   export DINGTALK_CLIENT_SECRET=xxx        # 钉钉应用 AppSecret
+   # 另需已登录：supabase login、gh auth login
+
+③ 一键全自动（建 Supabase 项目→建表→部署函数→配密钥→建 GitHub 仓库→开 CI）
+   ./auto-provision.sh <app-name>
+   # 跑完会打印三件交接物：Supabase 回调地址 / 函数地址 / 前端公网地址
+
+④ 停 — 钉钉开发者后台 4 步无开放 API，agent 必须停下来交人工：
+   建应用拿 AppKey/Secret · 配回调白名单 · 开 Contact.User.Read 并发版 · 建 Custom Provider
+   （把第 ③ 步打印的「回调地址/函数地址」交给前半段/勤泽侧去填）
+```
+
+判断标准：第 ③ 步脚本退出码为 0 且打印出三件交接物 = 后半段闭环完成。剩下只欠钉钉人工 4 步。
+
 ## 适用边界
 
 - **负责**：Supabase 项目生命周期、DB migration、Edge Functions 部署、GitHub 仓库与 CI/CD、前端 Pages 托管。
