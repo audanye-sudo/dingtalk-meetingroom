@@ -19,6 +19,13 @@ ding-supabase/
 └── web/index.html                               前端：钉钉登录 → 读写 notes
 ```
 
+## 🛠 后半段基建 Skill（交付给开放平台 skill 侧）
+
+把"本地代码 → GitHub → Supabase 自动部署"这条链路沉淀成了可复用 skill，
+含实测命令 + 三个已踩坑 + 交接接口表，照着 `auto-provision.sh` 一键即可搭：
+
+👉 [`skills/github-supabase-deploy/SKILL.md`](./skills/github-supabase-deploy/SKILL.md)
+
 ## 端到端数据流
 
 ```
