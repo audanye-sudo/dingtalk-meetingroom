@@ -58,7 +58,11 @@
 
     const SUPABASE_URL = "https://cmssmznuyisllmzdpaes.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNtc3Ntem51eWlzbGxtemRwYWVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyOTAwMTIsImV4cCI6MjA5Nzg2NjAxMn0.g0ypNwCWDWvau61XNGMXmoiOJjSVSuhdk3saz6bRxxQ";
-    const FUNCTION_URL = `${SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co")}/rooms-api`;
+    const FN_BASE = SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co");
+    const FUNCTION_URL = `${FN_BASE}/rooms-api`;
+    const AUTH_FN_URL = `${FN_BASE}/auth-login`;
+    const DING_APP_KEY = "dinga8gydvqf7uhzz3cc";              // OpenCode助手 appKey
+    const REDIRECT_URI = location.origin + location.pathname; // 须在钉钉登录回调白名单内
 
     const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const $ = (id) => document.getElementById(id);
@@ -87,8 +91,12 @@
         $("who").textContent = "";
         $("app").innerHTML = `<div class="center">登录后查看与预订会议室</div>
           <button class="primary login-btn" id="login">用钉钉登录</button>`;
-        $("login").onclick = () =>
-          sb.auth.signInWithOAuth({ provider: "custom:dingtalk", options: { redirectTo: location.href } });
+        $("login").onclick = () => {
+          const state = Math.random().toString(36).slice(2);
+          location.href = `https://login.dingtalk.com/oauth2/auth?client_id=${DING_APP_KEY}`
+            + `&response_type=code&scope=openid&prompt=consent&state=${state}`
+            + `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
+        };
         return;
       }
       $("who").textContent = session.user.user_metadata?.name ?? "已登录";
@@ -169,7 +177,29 @@
 
     $("mask").onclick = (e) => { if (e.target.id === "mask") $("mask").classList.remove("show"); };
 
-    render();
+    // 启动：若 URL 带钉钉回调 code，先换会话再渲染
+    async function boot() {
+      const code = new URLSearchParams(location.search).get("authCode")
+        || new URLSearchParams(location.search).get("code");
+      if (code) {
+        try {
+          const res = await fetch(AUTH_FN_URL, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ code }),
+          });
+          const d = await res.json();
+          if (d.token_hash) {
+            await sb.auth.verifyOtp({ type: "magiclink", token_hash: d.token_hash });
+          } else {
+            toast(d.error || "登录失败");
+          }
+        } catch (e) { toast("登录异常"); }
+        history.replaceState({}, "", location.origin + location.pathname);
+      }
+      render();
+    }
+    boot();
   </script>
 </body>
 </html>

@@ -52,7 +52,7 @@ done
 echo "▶ 4/8 link + 建表 + 部署两个函数（CLI）"
 supabase link --project-ref "$REF" --password "$DB_PASS"
 supabase db push --password "$DB_PASS"
-supabase functions deploy dingtalk-oauth --no-verify-jwt --project-ref "$REF"
+supabase functions deploy auth-login --no-verify-jwt --project-ref "$REF"
 supabase functions deploy rooms-api --project-ref "$REF"
 
 echo "▶ 5/8 配钉钉密钥（secrets）"

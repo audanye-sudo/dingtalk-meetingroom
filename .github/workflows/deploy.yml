@@ -37,7 +37,7 @@ jobs:
 
       - name: Deploy Edge Functions
         run: |
-          supabase functions deploy dingtalk-oauth --no-verify-jwt --project-ref "$PROJECT_REF"
+          supabase functions deploy auth-login --no-verify-jwt --project-ref "$PROJECT_REF"
           supabase functions deploy rooms-api --project-ref "$PROJECT_REF"
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
