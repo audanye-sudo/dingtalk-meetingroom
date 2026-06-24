@@ -111,7 +111,8 @@ async function handleUserinfo(req: Request): Promise<Response> {
 // OIDC discovery：Supabase 保存时会拉 {issuer}/.well-known/openid-configuration。
 // BASE 按当前请求 origin 动态推导，避免写死项目 ref。
 function discovery(url: URL) {
-  const BASE = `${url.origin}/dingtalk-oauth`;
+  // Supabase 代理后 url.origin 可能是 http，OIDC issuer 需 https，强制改写
+  const BASE = `https://${url.host}/dingtalk-oauth`;
   return {
     issuer: BASE,
     authorization_endpoint: `${BASE}/authorize`,
