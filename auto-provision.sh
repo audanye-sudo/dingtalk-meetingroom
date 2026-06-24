@@ -40,6 +40,8 @@ REF=$(curl -s -X POST "${AUTH[@]}" "$API/projects" \
   -d "{\"organization_id\":\"$ORG\",\"name\":\"$APP_NAME\",\"region\":\"$REGION\",\"db_pass\":\"$DB_PASS\"}" \
   | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
 echo "   project ref=$REF  region=$REGION"
+# 保险：把 ref + DB 密码落盘到仓库外，万一后续步骤失败可续跑、不再产生孤儿项目
+{ echo "PROVISION_REF=$REF"; echo "PROVISION_DB_PASS=$DB_PASS"; } >> "$HOME/.config/dingtalk-meetingroom.env"
 
 echo "▶ 3/8 等项目 ACTIVE_HEALTHY"
 for i in $(seq 1 30); do
@@ -51,7 +53,7 @@ echo "▶ 4/8 link + 建表 + 部署两个函数（CLI）"
 supabase link --project-ref "$REF" --password "$DB_PASS"
 supabase db push --password "$DB_PASS"
 supabase functions deploy dingtalk-oauth --no-verify-jwt --project-ref "$REF"
-supabase functions deploy notes-api --project-ref "$REF"
+supabase functions deploy rooms-api --project-ref "$REF"
 
 echo "▶ 5/8 配钉钉密钥（secrets）"
 supabase secrets set DINGTALK_CLIENT_ID="$DINGTALK_CLIENT_ID" DINGTALK_CLIENT_SECRET="$DINGTALK_CLIENT_SECRET" --project-ref "$REF"

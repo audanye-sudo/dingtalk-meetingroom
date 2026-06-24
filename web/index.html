@@ -2,89 +2,174 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>钉钉登录 + Supabase 最小闭环 Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>会议室申请</title>
   <style>
-    body { font-family: -apple-system, system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #222; }
-    button { padding: 8px 16px; border-radius: 6px; border: 1px solid #ccc; background: #fff; cursor: pointer; }
-    button.primary { background: #1677ff; color: #fff; border-color: #1677ff; }
-    input { padding: 8px; border: 1px solid #ccc; border-radius: 6px; width: 70%; }
-    .card { border: 1px solid #eee; border-radius: 8px; padding: 16px; margin: 12px 0; }
-    .note { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; }
-    pre { background: #f6f8fa; padding: 12px; border-radius: 6px; overflow:auto; }
+    :root { --blue:#1677ff; --bg:#f5f6f8; --line:#ebedf0; --ok:#16a34a; --busy:#ef4444; --muted:#8a909a; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, system-ui, "PingFang SC", sans-serif; margin:0; background:var(--bg); color:#1d2129; }
+    header { background:var(--blue); color:#fff; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:5; }
+    header h1 { font-size:17px; margin:0; font-weight:600; }
+    header .who { font-size:12px; opacity:.9; }
+    .wrap { max-width:560px; margin:0 auto; padding:12px 12px 40px; }
+    .toolbar { display:flex; align-items:center; gap:10px; margin:8px 2px 14px; }
+    .toolbar label { font-size:13px; color:var(--muted); }
+    input[type=date] { flex:1; padding:9px 10px; border:1px solid var(--line); border-radius:10px; font-size:15px; background:#fff; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .room { background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px; display:flex; flex-direction:column; gap:8px; }
+    .room .top { display:flex; align-items:center; justify-content:space-between; }
+    .room .code { width:34px; height:34px; border-radius:9px; background:#eef3ff; color:var(--blue); font-weight:700; display:flex; align-items:center; justify-content:center; font-size:16px; }
+    .room .name { font-size:14px; font-weight:600; }
+    .tag { font-size:12px; padding:2px 8px; border-radius:20px; }
+    .tag.free { color:var(--ok); background:#e8f7ee; }
+    .tag.busy { color:var(--busy); background:#fdeaea; }
+    .room .by { font-size:12px; color:var(--muted); min-height:16px; }
+    .row { display:flex; gap:8px; }
+    button { flex:1; padding:9px 0; border-radius:10px; border:1px solid var(--line); background:#fff; font-size:14px; cursor:pointer; }
+    button.primary { background:var(--blue); color:#fff; border-color:var(--blue); }
+    button.danger { color:var(--busy); border-color:#f6caca; }
+    button.ghost { color:var(--muted); }
+    button:active { opacity:.7; }
+    .center { text-align:center; padding:60px 16px; color:var(--muted); }
+    .login-btn { max-width:280px; margin:24px auto; display:block; }
+    /* 详情弹层 */
+    .mask { position:fixed; inset:0; background:rgba(0,0,0,.4); display:none; align-items:flex-end; z-index:10; }
+    .mask.show { display:flex; }
+    .sheet { background:#fff; width:100%; max-width:560px; margin:0 auto; border-radius:18px 18px 0 0; padding:18px 18px 28px; }
+    .sheet h3 { margin:2px 0 14px; font-size:18px; }
+    .kv { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--line); font-size:14px; }
+    .kv span:first-child { color:var(--muted); }
+    .toast { position:fixed; left:50%; bottom:80px; transform:translateX(-50%); background:rgba(0,0,0,.82); color:#fff; padding:9px 16px; border-radius:20px; font-size:13px; z-index:20; opacity:0; transition:opacity .2s; pointer-events:none; }
+    .toast.show { opacity:1; }
   </style>
 </head>
 <body>
-  <h2>钉钉登录 + Supabase 最小闭环</h2>
+  <header>
+    <h1>会议室申请</h1>
+    <span class="who" id="who"></span>
+  </header>
+  <div class="wrap" id="app"><div class="center">加载中…</div></div>
 
-  <!-- ① 改成你的 Supabase 项目配置 -->
+  <div class="mask" id="mask"><div class="sheet" id="sheet"></div></div>
+  <div class="toast" id="toast"></div>
+
   <script type="module">
     import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-    const SUPABASE_URL = "https://xwzzmiomjtnaladqhikc.supabase.co";   // ✅ 已填
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh3enptaW9tanRuYWxhZHFoaWtjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1ODQ4MjEsImV4cCI6MjA5NzE2MDgyMX0.ggZ6G2XZpaEVTxpf6uqCNmS-gD8cxy_37UfLFQrof1Y";              // ← 只剩这个要你粘
-    const FUNCTION_URL = `${SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co")}/notes-api`;
+    const SUPABASE_URL = "https://cmssmznuyisllmzdpaes.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNtc3Ntem51eWlzbGxtemRwYWVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyOTAwMTIsImV4cCI6MjA5Nzg2NjAxMn0.g0ypNwCWDWvau61XNGMXmoiOJjSVSuhdk3saz6bRxxQ";
+    const FUNCTION_URL = `${SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co")}/rooms-api`;
 
     const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const $ = (id) => document.getElementById(id);
+    const todayStr = () => new Date().toISOString().slice(0, 10);
+    let curDate = todayStr();
 
-    async function render() {
-      const { data: { session } } = await sb.auth.getSession();
-      if (!session) {
-        $("app").innerHTML = `<button class="primary" id="login">用钉钉登录</button>`;
-        $("login").onclick = () =>
-          sb.auth.signInWithOAuth({ provider: "custom:dingtalk", options: { redirectTo: location.href } });
-        return;
-      }
-      const u = session.user;
-      $("app").innerHTML = `
-        <div class="card">
-          <b>${u.user_metadata?.name ?? "已登录"}</b>（sub/unionId: <code>${u.user_metadata?.sub ?? u.id}</code>）
-          <button id="logout" style="float:right">退出</button>
-        </div>
-        <div class="card">
-          <input id="content" placeholder="写一条 note…" />
-          <button class="primary" id="add">新增</button>
-          <div id="list"></div>
-        </div>
-        <details><summary>Edge Function 原始返回</summary><pre id="raw"></pre></details>`;
-      $("logout").onclick = async () => { await sb.auth.signOut(); render(); };
-      $("add").onclick = async () => {
-        const content = $("content").value.trim();
-        if (!content) return;
-        await callFn("POST", { content });
-        $("content").value = "";
-        load();
-      };
-      load();
+    function toast(msg) {
+      const t = $("toast"); t.textContent = msg; t.classList.add("show");
+      setTimeout(() => t.classList.remove("show"), 1800);
     }
 
-    // 调业务 Edge Function（带登录 JWT）
-    async function callFn(method, body) {
+    async function callFn(method, opts = {}) {
       const { data: { session } } = await sb.auth.getSession();
-      const res = await fetch(FUNCTION_URL, {
+      const qs = opts.query ? "?" + new URLSearchParams(opts.query) : "";
+      const res = await fetch(FUNCTION_URL + qs, {
         method,
         headers: { "Authorization": `Bearer ${session.access_token}`, "content-type": "application/json" },
-        body: body ? JSON.stringify(body) : undefined,
+        body: opts.body ? JSON.stringify(opts.body) : undefined,
       });
       return res.json();
     }
 
-    async function load() {
-      const r = await callFn("GET");
-      $("raw").textContent = JSON.stringify(r, null, 2);
-      $("list").innerHTML = `<p>共 ${r.count ?? 0} 条：</p>` +
-        (r.notes ?? []).map((n) => `<div class="note">${n.content}<small style="color:#999"> · ${n.created_at}</small></div>`).join("");
+    async function render() {
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) {
+        $("who").textContent = "";
+        $("app").innerHTML = `<div class="center">登录后查看与预订会议室</div>
+          <button class="primary login-btn" id="login">用钉钉登录</button>`;
+        $("login").onclick = () =>
+          sb.auth.signInWithOAuth({ provider: "custom:dingtalk", options: { redirectTo: location.href } });
+        return;
+      }
+      $("who").textContent = session.user.user_metadata?.name ?? "已登录";
+      $("app").innerHTML = `
+        <div class="toolbar">
+          <label>日期</label>
+          <input type="date" id="date" value="${curDate}" min="${todayStr()}" />
+          <button class="ghost" id="logout" style="flex:0 0 auto;padding:9px 12px">退出</button>
+        </div>
+        <div class="grid" id="grid"><div class="center">加载中…</div></div>`;
+      $("date").onchange = (e) => { curDate = e.target.value || todayStr(); loadRooms(); };
+      $("logout").onclick = async () => { await sb.auth.signOut(); render(); };
+      loadRooms();
     }
+
+    async function loadRooms() {
+      const r = await callFn("GET", { query: { action: "list", date: curDate } });
+      if (r.error) { $("grid").innerHTML = `<div class="center">${r.error}</div>`; return; }
+      $("grid").innerHTML = r.rooms.map((room) => `
+        <div class="room" data-id="${room.id}">
+          <div class="top">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div class="code">${room.code}</div><div class="name">${room.name}</div>
+            </div>
+            <span class="tag ${room.booked ? "busy" : "free"}">${room.booked ? "已订" : "空闲"}</span>
+          </div>
+          <div class="by">${room.booked ? "预订人：" + (room.booked_by ?? "—") : "当天可预订"}</div>
+          <div class="row">
+            <button class="detail" data-id="${room.id}">详情</button>
+            ${
+              room.booked
+                ? (room.is_mine
+                    ? `<button class="danger cancel" data-bid="${room.booking_id}">取消</button>`
+                    : `<button disabled style="color:#bbb">不可订</button>`)
+                : `<button class="primary book" data-id="${room.id}">预定</button>`
+            }
+          </div>
+        </div>`).join("");
+
+      $("grid").querySelectorAll(".book").forEach((b) => b.onclick = () => book(b.dataset.id));
+      $("grid").querySelectorAll(".cancel").forEach((b) => b.onclick = () => cancel(b.dataset.bid));
+      $("grid").querySelectorAll(".detail").forEach((b) => b.onclick = () => detail(b.dataset.id));
+    }
+
+    async function book(roomId) {
+      const r = await callFn("POST", { body: { action: "book", room_id: Number(roomId), date: curDate } });
+      toast(r.error ? r.error : "预定成功");
+      loadRooms();
+    }
+    async function cancel(bid) {
+      const r = await callFn("POST", { body: { action: "cancel", booking_id: Number(bid) } });
+      toast(r.error ? r.error : "已取消");
+      loadRooms();
+    }
+    async function detail(roomId) {
+      const r = await callFn("GET", { query: { action: "detail", room_id: roomId, date: curDate } });
+      const b = r.booking;
+      $("sheet").innerHTML = `
+        <h3>${r.room.code} · ${r.room.name}</h3>
+        <div class="kv"><span>日期</span><span>${r.date}</span></div>
+        <div class="kv"><span>状态</span><span>${b ? "已预订" : "空闲"}</span></div>
+        <div class="kv"><span>预订人</span><span>${b ? (b.booked_by ?? "—") : "—"}</span></div>
+        <div class="kv"><span>预定时间</span><span>${b ? new Date(b.booked_at).toLocaleString("zh-CN") : "—"}</span></div>
+        <div class="row" style="margin-top:16px">
+          ${
+            b
+              ? (b.is_mine ? `<button class="danger" id="d-cancel">取消预订</button>` : `<button disabled style="color:#bbb">他人已订</button>`)
+              : `<button class="primary" id="d-book">预定该会议室</button>`
+          }
+          <button class="ghost" id="d-close">关闭</button>
+        </div>`;
+      $("mask").classList.add("show");
+      $("d-close").onclick = () => $("mask").classList.remove("show");
+      const bk = $("d-book"), cc = $("d-cancel");
+      if (bk) bk.onclick = async () => { $("mask").classList.remove("show"); await book(roomId); };
+      if (cc) cc.onclick = async () => { $("mask").classList.remove("show"); await cancel(b.id); };
+    }
+
+    $("mask").onclick = (e) => { if (e.target.id === "mask") $("mask").classList.remove("show"); };
 
     render();
   </script>
-
-  <div id="app">加载中…</div>
-
-  <p style="color:#999;font-size:13px;margin-top:32px">
-    前置：① Supabase 已建 Custom OAuth2 Provider <code>custom:dingtalk</code>（URL 见附录 C.1）；
-    ② notes 表 + RLS 已建（migration）；③ notes-api 已部署。
-  </p>
 </body>
 </html>
